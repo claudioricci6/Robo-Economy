@@ -429,12 +429,19 @@ def schedule_table(plan: Plan):
 
 
 def example_list(today: dt.date) -> list[dict]:
-    mix = [("COLON", 3), ("RECTUM", 8), ("PROSTATE", 2), ("COLON", 12), ("LUNG", 5), ("PD", 9), ("KIDNEY", 1), ("CHOLE", 20),
-           ("LIVER_MIN", 4), ("LIVER_MAJ", 15), ("SIGMOID", 30), ("BLADDER", 6), ("PROSTATE", 14), ("STOMACH", 10),
-           ("ILEOCAECAL", 25), ("OVARY", 3), ("COLON", 1), ("RECTUM", 18), ("SLEEVE", 40), ("PROSTATE", 7), ("CHOLE", 35),
-           ("OESOPHAGUS", 11), ("HARTMANN", 50), ("KIDNEY", 16), ("ANTIREFLUX", 28), ("DP", 6), ("LUNG", 13), ("BYPASS", 45),
-           ("CHOLE", 12), ("RECTUM", 2)]
-    return [dict(code=str(i + 1), op=k, date=today - dt.timedelta(days=d)) for i, (k, d) in enumerate(mix)]
+    """Example waiting list of 70 patients (48 cancer, 22 benign), listing dates relative to today."""
+    import random
+    rnd = random.Random(2026)
+    mix = {"COLON": 9, "RECTUM": 5, "STOMACH": 3, "PD": 3, "DP": 2, "LIVER_MIN": 3, "LIVER_MAJ": 2,
+           "PROSTATE": 8, "KIDNEY": 4, "BLADDER": 2, "LUNG": 4, "OESOPHAGUS": 1, "OVARY": 2,
+           "CHOLE": 10, "ILEOCAECAL": 2, "SIGMOID": 3, "HARTMANN": 2, "SLEEVE": 2, "BYPASS": 1, "ANTIREFLUX": 2}
+    ops = [k for k, n in mix.items() for _ in range(n)]
+    rnd.shuffle(ops)
+    out = []
+    for i, k in enumerate(ops):
+        days = rnd.randint(0, 25) if OP[k]["g"] != "ben" else rnd.randint(10, 150)
+        out.append(dict(code=str(i + 1), op=k, date=today - dt.timedelta(days=days)))
+    return sorted(out, key=lambda p: p["date"])
 
 
 # --------------------------------------------------------------------------- optimiser

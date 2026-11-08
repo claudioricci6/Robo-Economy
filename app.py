@@ -33,8 +33,8 @@ def first_workday(d: dt.date) -> dt.date:
 
 # ------------------------------------------------------------------ state
 if "patients" not in st.session_state:
-    st.session_state.patients = example_list(TODAY)
-    st.session_state.example = True
+    st.session_state.patients = []
+    st.session_state.example = False
 if "pending" not in st.session_state:
     st.session_state.pending = []
 
@@ -65,13 +65,27 @@ with st.sidebar:
 st.html(ui.header())
 kpi_slot = st.empty()
 
-tab_list, tab_upload, tab_alerts, tab_plan, tab_opt, tab_about = st.tabs(
-    ["Waiting list", "Upload a list", "Alerts", "Schedule", "Optimiser", "Methods"])
+tab_upload, tab_list, tab_alerts, tab_plan, tab_opt, tab_about = st.tabs(
+    ["1 · Upload a list", "2 · Waiting list", "Alerts", "Schedule", "Optimiser", "Methods"])
+
+
+def load_example():
+    st.session_state.patients, st.session_state.example = example_list(TODAY), True
+
+
+EXAMPLE_TEXT = ("No waiting list yet? Load an example with 70 patients waiting (48 cancer: colorectal, gastric, pancreas, "
+                "liver, prostate, kidney, bladder, lung, oesophagus, ovary; 22 benign: cholecystectomy, Crohn's disease, "
+                "diverticular disease, Hartmann reversal, bariatric and antireflux surgery).")
 
 # ------------------------------------------------------------------ waiting list
 with tab_list:
-    if st.session_state.example:
-        st.info("Example data. Replace them with your own list (Upload a list) or edit the table below.")
+    if not st.session_state.patients:
+        st.info("No waiting list yet. Upload your list in tab 1, add patients one by one in the table below, or load the example.")
+        if st.button("Load example list (70 patients)", key="ex_list", type="primary"):
+            load_example()
+            st.rerun()
+    elif st.session_state.example:
+        st.info("Example data (70 patients). Replace them with your own list (tab 1) or edit the table below.")
     df = pd.DataFrame([{"Code": p["code"], "Operation": OP_LABEL[p["op"]], "Listed on": p["date"]}
                        for p in st.session_state.patients])
     edited = st.data_editor(
@@ -98,12 +112,21 @@ with tab_list:
     if c1.button("Clear list"):
         st.session_state.patients, st.session_state.example = [], False
         st.rerun()
-    if c2.button("Load example"):
-        st.session_state.patients, st.session_state.example = example_list(TODAY), True
+    if c2.button("Load example (70 patients)"):
+        load_example()
         st.rerun()
 
 # ------------------------------------------------------------------ upload
 with tab_upload:
+    if not st.session_state.patients:
+        st.html(ui.alerts([dict(severity="info", title="Start here: upload your waiting list", text=EXAMPLE_TEXT, items=[])]))
+        if st.button("Load example list (70 patients)", key="ex_up", type="primary"):
+            load_example()
+            st.rerun()
+    else:
+        st.html(ui.alerts([dict(severity="ok", title=f"{len(st.session_state.patients)} patients on the waiting list"
+                                + (" (example)" if st.session_state.example else ""),
+                                text="See tab 2 to check or edit the list, then Alerts, Schedule and Optimiser.", items=[])]))
     st.write("Excel (.xlsx), CSV or text file. Columns: **code** (progressive number), **operation**, **date** of listing. "
              "Without a code, numbering continues from the last number in the list.")
     template = pd.DataFrame({"code": [31, 32, 33], "operation": ["PD", "DP", "Radical prostatectomy"],
@@ -161,7 +184,9 @@ with tab_upload:
 plan = schedule(st.session_state.patients, robots, start, weeks, session_len, deadline, allow_benign)
 S = summary(plan)
 
-kpi_slot.html(ui.kpis(S, deadline))
+HAS = bool(st.session_state.patients)
+NOLIST = "Upload a waiting list in tab 1, or load the example list with 70 patients, to see the plan."
+kpi_slot.html(ui.kpis(S, deadline) if HAS else '<p class="rtp-note" style="font-size:14px;margin:8px 0 4px">' + NOLIST + '</p>')
 
 
 def show(title, alerts):
@@ -170,11 +195,14 @@ def show(title, alerts):
 
 
 with tab_alerts:
-    show("Cancer deadline alerts", deadline_alerts(plan))
-    show("Economic use alerts", economic_alerts(plan))
-    st.caption("Thresholds from the Robo Economy model: robot time used below 40% is uneconomic and 40-70% is low; robot "
-               "cost above the DRG revenue it handles (ratio above 1) is uneconomic. Short benign operations "
-               "(cholecystectomy, bariatric surgery) have a low DRG tariff and no proven robotic benefit.")
+    if not HAS:
+        st.info(NOLIST)
+    else:
+        show("Cancer deadline alerts", deadline_alerts(plan))
+        show("Economic use alerts", economic_alerts(plan))
+        st.caption("Thresholds from the Robo Economy model: robot time used below 40% is uneconomic and 40-70% is low; robot "
+                   "cost above the DRG revenue it handles (ratio above 1) is uneconomic. Short benign operations "
+                   "(cholecystectomy, bariatric surgery) have a low DRG tariff and no proven robotic benefit.")
 
 def render_schedule(p, key):
     tab = schedule_table(p)
@@ -191,73 +219,79 @@ def render_schedule(p, key):
 
 
 with tab_plan:
-    st.caption("Rule-based schedule: cancer patients by deadline, benign patients in the time left, on the sessions set "
-               "for each robot. For the best plan, use the Optimiser tab.")
-    render_schedule(plan, "rules")
+    if not HAS:
+        st.info(NOLIST)
+    else:
+        st.caption("Rule-based schedule: cancer patients by deadline, benign patients in the time left, on the sessions set "
+                   "for each robot. For the best plan, use the Optimiser tab.")
+        render_schedule(plan, "rules")
 
 with tab_opt:
-    st.write("The optimiser looks for the best plan in strict order of priority: **1. clinical** (every cancer patient "
-             "scheduled, no day beyond the deadline, a margin of more than 3 days when possible); **2. economic** (each "
-             "operation on the robot where DRG tariff minus robot cost is highest; benign operations that cost the robot "
-             "more than their DRG are left to laparoscopy); **3. use** (the fewest sessions needed, so free sessions can "
-             "go back to other surgery).")
-    o1, o2, o3 = st.columns(3)
-    sess_val = o1.number_input("Value of a session given back to other surgery (€)", 0, 20000, 2000, 500,
-                               help="A session is opened only if its operations are worth more than this. Higher values "
-                                    "give fewer, fuller sessions.")
-    all_days = o2.checkbox("Let the optimiser use every weekday on each robot", value=True,
-                           help="Then it recommends how many weekly sessions each robot needs. Untick to keep the "
-                                "sessions set for each robot.")
-    tlimit = o3.slider("Time limit (seconds)", 5, 60, 20)
-    sig = (tuple((p["code"], p["op"], p["date"]) for p in st.session_state.patients),
-           tuple((r.type, r.sessions_per_week, r.contract) for r in robots), start, weeks, session_len, deadline,
-           allow_benign, sess_val, all_days)
-    if st.button("Optimise", type="primary"):
-        with st.spinner("Optimising..."):
-            st.session_state.opt = (sig, *optimise(st.session_state.patients, robots, start, weeks, session_len, deadline,
-                                                     allow_benign, sess_val, all_days, tlimit))
-    if "opt" in st.session_state and st.session_state.opt[0] == sig:
-        _, oplan, info = st.session_state.opt
-        O = summary(oplan)
-        st.caption(f"Solver status: {info['status']}.")
-        busy_r = [x for x in plan.sessions if x.cases]
-        u_r = sum(x.used for x in busy_r) / sum(x.length for x in busy_r) if busy_r else 0
-        spw_now = sum(r.sessions_per_week for r in robots)
-        spw_opt = sum(info["recommended_sessions"].values())
-        labels = [f"Cancers within {deadline} days", "Cancers late", "Cancers not scheduled", "Benign on the robot",
-                  "Weekly sessions set (all robots)", "Sessions with operations in the period",
-                  "Robot time used in those sessions", "Robot cost per € of DRG", "DRG revenue minus robot cost"]
-        rv = [f"{S['on_time']}/{S['cancers']}", S["late"], S["unscheduled"], f"{S['benign_done']}/{S['benign']}", spw_now,
-              len(busy_r), f"{u_r:.0%}", f"{S['ratio']:.2f}" if S["drg"] else "-", f"€{S['drg'] - S['cost']:,.0f}"]
-        ov = [f"{O['on_time']}/{O['cancers']}", O["late"], O["unscheduled"], f"{O['benign_done']}/{O['benign']}", spw_opt,
-              len(oplan.sessions), f"{O['utilisation']:.0%}", f"{O['ratio']:.2f}" if O["drg"] else "-", f"€{O['drg'] - O['cost']:,.0f}"]
-        num = lambda v: float(str(v).split("/")[0].replace("€", "").replace(",", "").replace("%", "")) if str(v) not in ("-",) else None
-        lower_better = {1, 2, 4, 5, 7}
-        better = set()
-        for i, (a_, b_) in enumerate(zip(rv, ov)):
-            x, y = num(a_), num(b_)
-            if x is not None and y is not None and x != y and ((y < x) if i in lower_better else (y > x)) and i != 3:
-                better.add(i)
-        st.html(ui.h2("Rule-based versus optimised") + ui.table(["", "Rule-based", "Optimised"],
-                [[l, a_, b_] for l, a_, b_ in zip(labels, rv, ov)], better_col=2, better_rows=better))
-        st.html(ui.h2("Recommended configuration") + ui.table(
-            ["Robot", "Type", "Contract", "Sessions per week now", "Sessions per week needed", "Sessions opened in the period"],
-            [[r.label, "multi-purpose" if r.type == "multi" else "colorectal only", CONTRACTS[r.contract]["n"],
-              r.sessions_per_week, info["recommended_sessions"][r.index],
-              sum(1 for s in oplan.sessions if s.robot.index == r.index)] for r in robots]))
-        if not all_days:
-            st.caption("Sessions were limited to the weekdays set for each robot.")
-        lap = info["benign_laparoscopy"]
-        if lap:
-            st.html(ui.alerts([dict(severity="info", title=f"{len(lap)} benign patient(s) left to laparoscopy or to a later period",
-                                    text="On the available robots their robot cost exceeds the DRG tariff, or no session had room.",
-                                    items=[f"{c.code} {c.op['n']}" for c in lap])]))
-        show("Cancer deadline alerts (optimised plan)", deadline_alerts(oplan))
-        show("Economic use alerts (optimised plan)", economic_alerts(oplan))
-        st.html(ui.h2("Optimised schedule"))
-        render_schedule(oplan, "optimised")
-    elif "opt" in st.session_state:
-        st.info("Settings or list changed. Press Optimise again.")
+    if not HAS:
+        st.info(NOLIST)
+    else:
+        st.write("The optimiser looks for the best plan in strict order of priority: **1. clinical** (every cancer patient "
+                 "scheduled, no day beyond the deadline, a margin of more than 3 days when possible); **2. economic** (each "
+                 "operation on the robot where DRG tariff minus robot cost is highest; benign operations that cost the robot "
+                 "more than their DRG are left to laparoscopy); **3. use** (the fewest sessions needed, so free sessions can "
+                 "go back to other surgery).")
+        o1, o2, o3 = st.columns(3)
+        sess_val = o1.number_input("Value of a session given back to other surgery (€)", 0, 20000, 2000, 500,
+                                   help="A session is opened only if its operations are worth more than this. Higher values "
+                                        "give fewer, fuller sessions.")
+        all_days = o2.checkbox("Let the optimiser use every weekday on each robot", value=True,
+                               help="Then it recommends how many weekly sessions each robot needs. Untick to keep the "
+                                    "sessions set for each robot.")
+        tlimit = o3.slider("Time limit (seconds)", 5, 60, 20)
+        sig = (tuple((p["code"], p["op"], p["date"]) for p in st.session_state.patients),
+               tuple((r.type, r.sessions_per_week, r.contract) for r in robots), start, weeks, session_len, deadline,
+               allow_benign, sess_val, all_days)
+        if st.button("Optimise", type="primary"):
+            with st.spinner("Optimising..."):
+                st.session_state.opt = (sig, *optimise(st.session_state.patients, robots, start, weeks, session_len, deadline,
+                                                         allow_benign, sess_val, all_days, tlimit))
+        if "opt" in st.session_state and st.session_state.opt[0] == sig:
+            _, oplan, info = st.session_state.opt
+            O = summary(oplan)
+            st.caption(f"Solver status: {info['status']}.")
+            busy_r = [x for x in plan.sessions if x.cases]
+            u_r = sum(x.used for x in busy_r) / sum(x.length for x in busy_r) if busy_r else 0
+            spw_now = sum(r.sessions_per_week for r in robots)
+            spw_opt = sum(info["recommended_sessions"].values())
+            labels = [f"Cancers within {deadline} days", "Cancers late", "Cancers not scheduled", "Benign on the robot",
+                      "Weekly sessions set (all robots)", "Sessions with operations in the period",
+                      "Robot time used in those sessions", "Robot cost per € of DRG", "DRG revenue minus robot cost"]
+            rv = [f"{S['on_time']}/{S['cancers']}", S["late"], S["unscheduled"], f"{S['benign_done']}/{S['benign']}", spw_now,
+                  len(busy_r), f"{u_r:.0%}", f"{S['ratio']:.2f}" if S["drg"] else "-", f"€{S['drg'] - S['cost']:,.0f}"]
+            ov = [f"{O['on_time']}/{O['cancers']}", O["late"], O["unscheduled"], f"{O['benign_done']}/{O['benign']}", spw_opt,
+                  len(oplan.sessions), f"{O['utilisation']:.0%}", f"{O['ratio']:.2f}" if O["drg"] else "-", f"€{O['drg'] - O['cost']:,.0f}"]
+            num = lambda v: float(str(v).split("/")[0].replace("€", "").replace(",", "").replace("%", "")) if str(v) not in ("-",) else None
+            lower_better = {1, 2, 4, 5, 7}
+            better = set()
+            for i, (a_, b_) in enumerate(zip(rv, ov)):
+                x, y = num(a_), num(b_)
+                if x is not None and y is not None and x != y and ((y < x) if i in lower_better else (y > x)) and i != 3:
+                    better.add(i)
+            st.html(ui.h2("Rule-based versus optimised") + ui.table(["", "Rule-based", "Optimised"],
+                    [[l, a_, b_] for l, a_, b_ in zip(labels, rv, ov)], better_col=2, better_rows=better))
+            st.html(ui.h2("Recommended configuration") + ui.table(
+                ["Robot", "Type", "Contract", "Sessions per week now", "Sessions per week needed", "Sessions opened in the period"],
+                [[r.label, "multi-purpose" if r.type == "multi" else "colorectal only", CONTRACTS[r.contract]["n"],
+                  r.sessions_per_week, info["recommended_sessions"][r.index],
+                  sum(1 for s in oplan.sessions if s.robot.index == r.index)] for r in robots]))
+            if not all_days:
+                st.caption("Sessions were limited to the weekdays set for each robot.")
+            lap = info["benign_laparoscopy"]
+            if lap:
+                st.html(ui.alerts([dict(severity="info", title=f"{len(lap)} benign patient(s) left to laparoscopy or to a later period",
+                                        text="On the available robots their robot cost exceeds the DRG tariff, or no session had room.",
+                                        items=[f"{c.code} {c.op['n']}" for c in lap])]))
+            show("Cancer deadline alerts (optimised plan)", deadline_alerts(oplan))
+            show("Economic use alerts (optimised plan)", economic_alerts(oplan))
+            st.html(ui.h2("Optimised schedule"))
+            render_schedule(oplan, "optimised")
+        elif "opt" in st.session_state:
+            st.info("Settings or list changed. Press Optimise again.")
 
 with tab_about:
     st.markdown("""
