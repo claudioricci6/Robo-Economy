@@ -307,7 +307,7 @@ Weekday pattern: 5 sessions = Mon-Fri; 4 = Mon, Tue, Thu, Fri; 3 = Mon, Wed, Fri
 Fixed costs are counted per robot for the planning horizon (46 operating weeks per year). Expected DRG tariffs from the
 Lombardy list, 40% of patients in the DRG with complications.
 
-**Source.** Ricci C, D'Ambra V, Fichera M, Alberici L, Ingaldi C, Casadei R. Who should fill the robot? Operating-room
+**Source.** Ricci C, et al. Who should fill the robot? Operating-room
 capacity, approach-neutral DRG payment and interdisciplinary use of robotic platforms in major general surgery: a
 hospital-level model.
 

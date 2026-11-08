@@ -6,11 +6,12 @@ deadlines and uneconomic use of the robots.
 
 The tool is based on the hospital-level model described in:
 
-> Ricci C, D'Ambra V, Fichera M, Alberici L, Ingaldi C, Casadei R. *Who should fill the robot? Operating-room capacity,
+> Ricci C, et al. *Who should fill the robot? Operating-room capacity,
 > approach-neutral DRG payment and interdisciplinary use of robotic platforms in major general surgery: a
 > hospital-level model.* [Journal and DOI to be added]
 
-**Live app:** [URL to be added]
+**Live app:** https://robo-economy-zjlsdwqwgsewdnqr7zhzt9.streamlit.app/  
+**Source code:** https://github.com/claudioricci6/Robo-Economy
 
 ## What it does
 
